@@ -1,0 +1,11 @@
+{
+    "exe": "adaptor.py", 
+    "protocol": "ble", 
+    "name": "CC2650 SensorTag", 
+    "device_resource": "/api/bridge/v1/device/57", 
+    "url": "https://github.com/ContinuumBridge/sensortag_2/archive/v0.0.1.tar.gz", 
+    "version": "0.0.1", 
+    "provider": "ContinuumBridge", 
+    "adaptor_resource": "/api/bridge/v1/adaptor/20", 
+    "description": "TI SimpleLink SensorTag (2nd generation SensorTag)"
+}
