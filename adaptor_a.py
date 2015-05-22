@@ -9,7 +9,7 @@ EOF_MONITOR_INTERVAL = 1  # Interval over which to count EOFs from device (sec)
 MAX_EOF_COUNT = 2         # Max EOFs allowed in that interval
 INIT_TIMEOUT = 16         # Timeout when initialising SensorTag (sec)
 GATT_SLEEP_TIME = 2       # Time to sleep between killing one gatt process & starting another
-MAX_NOTIFY_INTERVAL = 30  # Above this value tag will be polled rather than asked to notify (sec)
+MAX_NOTIFY_INTERVAL = 10  # Above this value tag will be polled rather than asked to notify (sec)
 
 import pexpect
 import sys
@@ -365,21 +365,21 @@ class Adaptor(CbAdaptor):
 
     def calcTemperature(self, raw):
         # Calculate temperatures
-        objT = self.s16tofloat(raw[1] + raw[0]) / 128.0
-        ambT = self.s16tofloat(raw[3] + raw[2]) / 128.0
+        objT = self.s16tofloat(raw[1] + raw[0]) * 0.03125/4 
+        ambT = self.s16tofloat(raw[3] + raw[2]) * 0.03125/4
+        #self.cbLog("debug", "calcTemperature. raw: " + str(raw) + ", objT: " + str(objT)  + ", ambT: " + str(ambT))
         return objT, ambT
 
     def calcHumidity(self, raw):
-        t1 = self.s16tofloat(raw[1] + raw[0])
-        rawH = int((raw[3] + raw[2]), 16) & 0xFFFC # Clear bits [1:0] - status
-        # Calculate relative humidity [%RH] 
-        v = -6.0 + 125.0/65536 * float(rawH) # RH= -6 + 125 * SRH/2^16
+        v = ((float.fromhex(raw[3] + raw[2]))/2**16)*100
+        #self.cbLog("debug", "calcHumidity. raw: " + str(raw) + ", humidity: " + str(v))
         return v
 
     def calcLuminance(self, raw):
         raw = int((raw[1] + raw[0]), 16) & 0xFFFC # Clear bits [1:0] - status
-        # Calculate relative humidity [%RH] 
-        v = float(raw/4.0)
+        lsb_size = 0.01 * 2**(raw >> 12)
+        v = float(lsb_size * (raw & 0x0FFF))
+        #self.cbLog("debug", "calcLumiuminance, lsb_size: " + str(lsb_size) + ", fractional: " + str(raw & 0x0FFF))
         return v
 
     def calcGyro(self, raw):
