@@ -241,7 +241,7 @@ class Adaptor(CbAdaptor):
                         self.pollApps[a] = []
                     elif self.pollInterval[a] < minPollInterval:
                         minPollInterval = self.pollInterval[a]
-                        self.gattTimeout = 2*minPollInterval + 1
+                        self.gattTimeout = minPollInterval + 5
             self.cbLog("debug", "gattTimeout: " + str(self.gattTimeout))
             for a in self.notifyApps:
                 if a != "ir_temperature" and a != "connected":
@@ -571,11 +571,15 @@ class Adaptor(CbAdaptor):
                     self.notifyApps[f["characteristic"]].append(message["id"])
                     if f["interval"] < self.pollInterval[f["characteristic"]]:
                         self.pollInterval[f["characteristic"]] = f["interval"]
+                    if self.pollInterval[f["characteristic"]] < 60:
+                        self.pollInterval[f["characteristic"]] = 60
             else:
                 if message["id"] not in self.pollApps[f["characteristic"]]:
                     self.pollApps[f["characteristic"]].append(message["id"])
                     if f["interval"] < self.pollInterval[f["characteristic"]]:
                         self.pollInterval[f["characteristic"]] = f["interval"]
+                    if self.pollInterval[f["characteristic"]] < 60:
+                        self.pollInterval[f["characteristic"]] = 60
         self.checkAllProcessed(message["id"])
 
     def onConfigureMessage(self, config):
