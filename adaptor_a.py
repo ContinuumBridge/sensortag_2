@@ -77,11 +77,12 @@ class Adaptor(CbAdaptor):
                     "off": " 00",
                     "notify": " 0100",
                     "stop_notify": " 0000",
-                    "gyro_on": " 07"
+                    "gyro_on": " 07",
+                    "accel_on": " 8300"
                    }
         self.primary = {"temp": 0x1F,
                         "humid": 0x27,
-                        "accel": 0x44,
+                        "accel": 0x37,
                         "magnet": 0x44,
                         "luminance": 0x3F,
                         "gyro": 0x5E,
@@ -91,25 +92,32 @@ class Adaptor(CbAdaptor):
         self.handles["temperature"] =  {"en": str(hex(self.primary["temp"] + 5)), 
                                         "notify": str(hex(self.primary["temp"] + 3)),
                                         "period": str(hex(self.primary["temp"] + 7)),
-                                        "period_value": " 50", 
+                                        "period_value": " ff", 
+                                        "min_period": 30,
                                         "data": str(format(self.primary["temp"] + 2, "#06x"))
                                        }
-        self.handles["acceleration"] = {"en": str(hex(self.primary["accel"] + 6)), 
-                                       "notify": str(hex(self.primary["accel"] + 3)),
-                                       "period": str(hex(self.primary["accel"] + 7)), 
-                                       # Period = 0x34 value x 10 ms (thought to be 0x0a)
-                                       # Was running with 0x0A = 100 ms, now 0x22 = 500 ms
-                                       "period_value": " 22", 
-                                       "data": str(format(self.primary["accel"] + 2, "#06x"))
+        self.handles["acceleration"] = {"en": str(hex(self.primary["accel"] + 5)), 
+                                        "en_on": " 3800",
+                                        "en_off": " 0000",
+                                        "notify": str(hex(self.primary["accel"] + 3)),
+                                        "period": str(hex(self.primary["accel"] + 7)), 
+                                        # Period min is 10 ms. Set to max.
+                                        "period_value": " ff", 
+                                        "min_period": 10,
+                                        "data": str(format(self.primary["accel"] + 2, "#06x"))
                                        }
         self.handles["humidity"] = {"en": str(hex(self.primary["humid"] + 5)), 
-                                       "notify": str(hex(self.primary["humid"] + 3)),
-                                       "data": str(format(self.primary["humid"] + 2, "#06x"))
+                                    "notify": str(hex(self.primary["humid"] + 3)),
+                                    "period": str(hex(self.primary["humid"] + 7)), 
+                                    "period_value": " ff", 
+                                    "min_period": 10,
+                                    "data": str(format(self.primary["humid"] + 2, "#06x"))
                                        }
         self.handles["magnetometer"] = {"en": str(hex(self.primary["magnet"] + 6)), 
                                         "notify": str(hex(self.primary["magnet"] + 3)),
                                         "period": str(hex(self.primary["magnet"] + 9)), 
-                                        "period_value": " 66", 
+                                        "period_value": " ff", 
+                                        "min_period": 30,
                                         "data": str(format(self.primary["magnet"] + 2, "#06x"))
                                        }
         self.handles["gyro"] =  {"en": str(hex(self.primary["gyro"] + 6)), 
@@ -119,7 +127,8 @@ class Adaptor(CbAdaptor):
         self.handles["luminance"] =  {"en": str(hex(self.primary["luminance"] + 5)), 
                                       "notify": str(hex(self.primary["luminance"] + 3)),
                                       "period": str(hex(self.primary["luminance"] + 7)), 
-                                      "period_value": " 40", 
+                                      "period_value": " ff", 
+                                      "min_period": 30,
                                       "data": str(format(self.primary["luminance"] + 2, "#06x"))
                                 }
         self.handles["buttons"] =  {"notify": str(hex(self.primary["buttons"] + 3)),
@@ -251,9 +260,11 @@ class Adaptor(CbAdaptor):
                             i = int(self.pollInterval[a] * 100)
                             if i > 255:
                                 i = 255
-                            elif i < self.handles[a]["period_value"]:
-                                i =self.handles[a]["period_value"] 
-                            self.handles[a]["period_value"] = ' ' + str(i)
+                            elif i < self.handles[a]["min_period"]:
+                                i = self.handles[a]["min_period"]
+                            elif i > int(self.handles[a]["period_value"], 16):
+                                i =int(self.handles[a]["period_value"], 16)
+                            self.handles[a]["period_value"] = ' ' + hex(i)[2:].zfill(2)
                             self.cbLog("debug", "period value: " + str(a) + " " + str(self.handles[a]["period_value"]))
             self.cbLog("info", "notifyApps: " + str(json.dumps(self.notifyApps, indent=4)))
             self.cbLog("info", "pollApps: " + str(json.dumps(self.pollApps, indent=4)))
@@ -290,14 +301,17 @@ class Adaptor(CbAdaptor):
         for a in self.notifyApps:
             if a != "ir_temperature" and a != "connected":
                 if self.notifyApps[a]:
-                    if "en" in self.handles[a]:
+                    if "en_on" in self.handles[a]:
+                        self.cbLog("debug", "writing " + a + " en_on")
+                        self.writeTag(self.handles[a]["en"], self.handles[a]["en_on"])
+                    elif "en" in self.handles[a]:
                         self.cbLog("debug", "writing " + a + " en")
                         self.writeTag(self.handles[a]["en"], self.cmd["on"])
                     if "notify" in self.handles[a]:
                         self.cbLog("debug", "writing " + a + " notify")
                         self.writeTag(self.handles[a]["notify"], self.cmd["notify"])
                     if "period" in self.handles[a]:
-                        self.cbLog("debug", "writing " + a + " period")
+                        self.cbLog("debug", "writing " + a + " period, value: " + self.handles[a]["period_value"])
                         self.writeTag(self.handles[a]["period"], self.handles[a]["period_value"])
                 else:
                     pass
@@ -314,8 +328,12 @@ class Adaptor(CbAdaptor):
         reactor.callLater(1, self.pollTag)
 
     def switchSensorOn(self, sensor):
-        if sensor != "ir_temperature":
-            self.writeTagNoCheck(self.handles[sensor]["en"], self.cmd["on"])
+        self.cbLog("debug", "switchSensorOn. sensor: " + sensor)
+        if sensor != "ir_temperature" and sensor != "connected":
+            if "en_on" in self.handles[sensor]:
+                self.writeTagNoCheck(self.handles[sensor]["en"], self.handles[sensor]["en_on"])
+            elif "en" in self.handles[sensor]:
+                self.writeTagNoCheck(self.handles[sensor]["en"], self.cmd["on"])
             self.writeTagNoCheck(self.handles[sensor]["notify"], self.cmd["notify"])
             if sensor not in self.activePolls:
                 self.activePolls.append(sensor)
@@ -324,9 +342,12 @@ class Adaptor(CbAdaptor):
         if sensor in self.activePolls:
             self.activePolls.remove(sensor)
         # ir_temperature comes from the temperature sensor
-        if sensor in self.pollApps and sensor != "ir_temperature":
+        if sensor in self.pollApps and sensor != "ir_temperature" and sensor != "connected" and sensor != "buttons":
             self.writeTagNoCheck(self.handles[sensor]["notify"], self.cmd["stop_notify"])
-            self.writeTagNoCheck(self.handles[sensor]["en"], self.cmd["off"])
+            if "en_off" in self.handles[sensor]:
+                self.writeTagNoCheck(self.handles[sensor]["en"], self.handles[sensor]["en_off"])
+            elif "en" in self.handles[sensor]:
+                self.writeTagNoCheck(self.handles[sensor]["en"], self.cmd["off"])
 
     def connectSensorTag(self):
         """
@@ -380,6 +401,12 @@ class Adaptor(CbAdaptor):
         lsb_size = 0.01 * 2**(raw >> 12)
         v = float(lsb_size * (raw & 0x0FFF))
         #self.cbLog("debug", "calcLumiuminance, lsb_size: " + str(lsb_size) + ", fractional: " + str(raw & 0x0FFF))
+        return v
+
+    def calcAccel(self, raw):
+        #self.cbLog("debug", "calcAccel, raw: " + str(raw[1]) + ", " + str(raw[0]))
+        r = self.s16tofloat(raw[1] + raw[0])
+        v = r/16384
         return v
 
     def calcGyro(self, raw):
@@ -462,10 +489,12 @@ class Adaptor(CbAdaptor):
                     type = raw[startI]
                     if type.startswith(self.handles["acceleration"]["data"]): 
                         # Accelerometer descriptor
+                        #self.cbLog("debug", "accel data: " + str(raw[10:16]))
+                        #self.cbLog("debug", "z-accel data: " + str(raw[20:22]))
                         accel = {}
-                        accel["x"] = self.s8tofloat(raw[startI+2])/63
-                        accel["y"] = self.s8tofloat(raw[startI+3])/63
-                        accel["z"] = self.s8tofloat(raw[startI+4])/63
+                        accel["x"] = self.calcAccel(raw[startI+8:startI+10])
+                        accel["y"] = self.calcAccel(raw[startI+10:startI+12])
+                        accel["z"] = self.calcAccel(raw[startI+12:startI+14])
                         self.sendcharacteristic("acceleration", accel, timeStamp)
                     elif type.startswith(self.handles["buttons"]["data"]):
                         # Button press decriptor
@@ -538,8 +567,8 @@ class Adaptor(CbAdaptor):
                              "interval": 1.0},
                             {"characteristic": "ir_temperature",
                              "interval": 1.0},
-                            #{"characteristic": "acceleration",
-                            # "interval": 1.0},
+                            {"characteristic": "acceleration",
+                             "interval": 1.0},
                             #{"characteristic": "gyro",
                             # "interval": 1.0},
                             #{"characteristic": "magnetometer",
@@ -571,15 +600,15 @@ class Adaptor(CbAdaptor):
                     self.notifyApps[f["characteristic"]].append(message["id"])
                     if f["interval"] < self.pollInterval[f["characteristic"]]:
                         self.pollInterval[f["characteristic"]] = f["interval"]
-                    if self.pollInterval[f["characteristic"]] < 60:
-                        self.pollInterval[f["characteristic"]] = 60
+                    #if self.pollInterval[f["characteristic"]] < 60:
+                    #    self.pollInterval[f["characteristic"]] = 60
             else:
                 if message["id"] not in self.pollApps[f["characteristic"]]:
                     self.pollApps[f["characteristic"]].append(message["id"])
                     if f["interval"] < self.pollInterval[f["characteristic"]]:
                         self.pollInterval[f["characteristic"]] = f["interval"]
-                    if self.pollInterval[f["characteristic"]] < 60:
-                        self.pollInterval[f["characteristic"]] = 60
+                    #if self.pollInterval[f["characteristic"]] < 60:
+                    #    self.pollInterval[f["characteristic"]] = 60
         self.checkAllProcessed(message["id"])
 
     def onConfigureMessage(self, config):
